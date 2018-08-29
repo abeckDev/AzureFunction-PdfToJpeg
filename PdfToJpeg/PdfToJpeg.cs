@@ -1,21 +1,28 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Threading.Tasks;
+using ImageMagick;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Azure.WebJobs.Host;
-using PdfiumViewer;
-using System.IO;
+using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Reflection;
+using System.Threading.Tasks;
 
 namespace PdfToJpeg
 {
     public static class PdfToJpeg
     {
-
         private static HttpClient Client { get; } = new HttpClient();
+        public static string AppFolder
+        {
+            get
+            {
+                return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            }
+        }
 
         [FunctionName("PdfToJpg")]
         public static async Task<HttpResponseMessage> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)]HttpRequestMessage req, TraceWriter log)
@@ -36,31 +43,36 @@ namespace PdfToJpeg
             {
                 return req.CreateErrorResponse(HttpStatusCode.BadRequest, "You need to provide a url via pdfurl option");
             }
+
             //Get PDF Document
-            PdfDocument pdfDocument = await GetPdfFromUrl(pdfUrl);
+            WebClient webClient = new WebClient();
+            Stream pdfStream = new MemoryStream(webClient.DownloadData(pdfUrl));
+
+            //SetUp ImageMagick
+            string ghostPath = $@"{AppFolder}\".Replace('\\', '/');
+            var debug = Directory.GetFiles(ghostPath);
+            MagickNET.SetGhostscriptDirectory(ghostPath);
+            MagickReadSettings settings = new MagickReadSettings();
+            settings.Density = new Density(300, 300);
 
             //Convert PDF to JPG
-            Stream jpgStream = ConvertPdfToJpg(pdfDocument);
+            MemoryStream jpegStream = new MemoryStream();
+            using (MagickImageCollection images = new MagickImageCollection())
+            {
+                images.Read(pdfStream,settings);
+                foreach (MagickImage image in images)
+                {
+                    image.Format = MagickFormat.Jpeg;
+                    image.Write(jpegStream);
+                }
+            }
 
-            //Return downloadable File
-            
-            return req.CreateResponse(HttpStatusCode.Accepted,jpgStream);
+            //Create HTTP response
+            var result = req.CreateResponse(HttpStatusCode.OK);
+            result.Content = new ByteArrayContent(jpegStream.ToArray());
+            result.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            return result;
 
-        }
-
-        public static async Task<PdfDocument> GetPdfFromUrl(string pdfurl)
-        {
-
-            PdfDocument pdfDocument = PdfDocument.Load(await Client.GetStreamAsync(pdfurl));
-            return pdfDocument;
-        }
-
-        public static Stream ConvertPdfToJpg(PdfDocument pdfDocument)
-        {
-            Stream jpgStream = new MemoryStream();
-            var jpgImage = pdfDocument.Render(0, 300, 300, true);
-            jpgImage.Save(jpgStream, ImageFormat.Jpeg);
-            return jpgStream;
         }
     }
 }
