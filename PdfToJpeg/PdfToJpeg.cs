@@ -2,8 +2,6 @@ using ImageMagick;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Azure.WebJobs.Host;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -44,6 +42,7 @@ namespace PdfToJpeg
                 return req.CreateErrorResponse(HttpStatusCode.BadRequest, "You need to provide a url via pdfurl option");
             }
 
+            log.Info("Got PDF Option. Downloading: " + pdfUrl);
             //Get PDF Document
             WebClient webClient = new WebClient();
             Stream pdfStream = new MemoryStream(webClient.DownloadData(pdfUrl));
@@ -51,11 +50,19 @@ namespace PdfToJpeg
             //SetUp ImageMagick
             string ghostPath = $@"{AppFolder}\".Replace('\\', '/');
             var debug = Directory.GetFiles(ghostPath);
+            log.Info("Setting up ImageMagick");
+
+            foreach (var item in debug)
+            {
+                log.Info("Found file: " + item);
+            }
+            
             MagickNET.SetGhostscriptDirectory(ghostPath);
             MagickReadSettings settings = new MagickReadSettings();
             settings.Density = new Density(300, 300);
 
             //Convert PDF to JPG
+            log.Info("Start converting");
             MemoryStream jpegStream = new MemoryStream();
             using (MagickImageCollection images = new MagickImageCollection())
             {
@@ -66,8 +73,10 @@ namespace PdfToJpeg
                     image.Write(jpegStream);
                 }
             }
+            log.Info("Finished converting");
 
             //Create HTTP response
+            log.Info("Creating response");
             var result = req.CreateResponse(HttpStatusCode.OK);
             result.Content = new ByteArrayContent(jpegStream.ToArray());
             result.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
