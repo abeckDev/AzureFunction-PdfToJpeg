@@ -1,3 +1,6 @@
+#r "D:\home\site\wwwroot\Ghostscript\gsdll64.dll"
+#r "D:\home\site\wwwroot\Ghostscript\gswin64c.exe"
+
 using ImageMagick;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
